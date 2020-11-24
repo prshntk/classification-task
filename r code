@@ -1,0 +1,90 @@
+f.gradient <- function(y, X, beta)
+{
+  n <- dim(X)[1]
+  beta <- matrix(beta, ncol = 1)
+  pi <- 1/(1+exp(-(X %*% beta)))+1e-8
+  rtn <- colSums(X * as.numeric(y - pi))
+  return(n*rtn)
+}
+
+SGA <- function(y, X, batch.size = dim(X)[1], t = .1, max.iter = dim(X)[1], adapt = FALSE)
+{  
+  p <- dim(X)[2]
+  n <- dim(X)[1]
+  
+  # create the mini-batches
+  permutation <- sample(1:n, replace = FALSE)
+  
+  K <- floor(n/batch.size)
+  batch.index <- split(permutation, rep(1:K, length = n, each = n/K))
+  
+  # index for choosing the mini-batch
+  count <- 1
+  
+  beta_k <- rep(0, p) # start at all 0s
+  track.gradient <- matrix(0, nrow = max.iter, ncol = p)
+  track.gradient[1,] <- f.gradient(y = y, X= X, beta = beta_k)/n
+  
+  # saving the running mean of the estimates of theta^*
+  mean_beta <- rep(0,p)
+  
+  # tk: in case we want t_k
+  tk <- t
+  
+  # ideally, we will have a while loop here, but
+  # I have written this to always complete some max.iter steps
+  for(iter in 1:max.iter)  
+  {
+    count <- count+1
+    
+    if(adapt) tk <- t/(sqrt(iter))  # in case t_k
+    if(count %% K == 0) count <- count%%K  +1  # when all batches finish, restart the batches
+    
+    # batch of data
+    y.batch <- y[batch.index[[count]] ]
+    X.batch <- matrix(X[batch.index[[count]], ], nrow = batch.size)
+    
+    # SGA step
+    beta_k = beta_k + tk* f.gradient(y = y.batch, X = X.batch, beta = beta_k)/batch.size
+    
+    # saving overall estimates and running gradients for demonstration
+    mean_beta <- (beta_k + mean_beta*(iter - 1))/(iter)
+    if(batch.size == n)
+    {
+      est <- beta_k
+    }else{
+      est <-  mean_beta
+    }    
+    track.gradient[iter,] <- f.gradient(y = y, X = X, beta = est)/n
+  }
+  rtn <- list("iter" = iter, "est" = est, "grad" = track.gradient[1:iter,])
+  return(rtn)
+}
+
+
+data <- read.csv("https://dvats.github.io/assets/data/180540.csv")
+data <- as.matrix(data)
+
+y <- data[,1]
+y <- matrix(y, ncol=1)
+X <- data[,-1:-2]
+
+
+mean <- apply(X,2,mean)
+std <- apply(X,2,sd)
+X_train <- (X-mean)/(std+1e-8)
+X_train <- cbind(1,X_train)
+
+
+ga <- SGA(y, X_train,batch.size = 100, t = .5, max.iter = 1e3,adapt = TRUE)
+beta <- ga$est
+
+est.y <- function(X.new,beta)
+{
+  y.pred <- 1/(1+exp(-(X.new %*% beta)))+1e-8
+  y.pred <- as.integer(y.pred>0.5)
+  return(y.pred)
+}
+save(est.y, beta, file = "180540.Rdata")
+
+
